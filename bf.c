@@ -1,48 +1,26 @@
-#include "stdio.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <errno.h>
-#include <unistd.h>
-#include <stdarg.h>
 
-int fdprintf(int fd, const char* format, ...) 
-{
-    va_list args;
-    size_t buflen = strlen(format) + 15;
-    char* buffer = alloca(buflen);    
-
-    va_start(args, format);
-    int len = vsnprintf(buffer, buflen, format, args);
-    va_end(args);
-
-    if (len < 0)
-        return printf("Failed to format:\n%s\n", format);
-
-    if (write(fd, buffer, len) != len)
-        return printf("Failed to write to file: %s", strerror(errno));
-
-    return -1;
-}
+#define TMPFILE "/tmp/_bfc"
 
 int main(int argc, char** argv)
 {
 	if (argc < 3)
 		return printf("Syntax: %s <source> <output>\n", argv[0]);
     
-    int fd = open(argv[1], O_RDONLY);
-    if (fd == -1)
+    FILE* fp = fopen(argv[1], "r");
+    if (!fp)
         return printf("Failed to read file '%s': %s\n", argv[1], strerror(errno));
-    struct stat st;
-    if (fstat(fd, &st) < 0)
-        return printf("Failed to stat file '%s': %s\n", argv[1], strerror(errno));
 
-    char* input = malloc(st.st_size + 1);
-    read(fd, input, st.st_size);
-    close(fd);
+    fseek(fp, 0, SEEK_END);
+    size_t sz = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    char* input = malloc(sz + 1);
+    fread(input, 1, sz, fp);
+    fclose(fp);
 
     struct label 
     {
@@ -50,9 +28,11 @@ int main(int argc, char** argv)
         struct label* prev;
     }* labels;
     
-    fd = creat("/tmp/_bfc.asm", S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    fp = fopen(TMPFILE".asm", "w+");
+    if (!fp)
+        return printf("Failed to create temporary file "TMPFILE".asm: %s\n", strerror(errno));
     
-    fdprintf(fd, 
+    fprintf(fp, 
              "section .bss\n"
              "buffer resb 0x10000\n\n"
              "section .text\n"
@@ -65,19 +45,19 @@ int main(int argc, char** argv)
     for(size_t i = 0; (ch = input[i]); i++) switch(ch)
     {
     case '>':
-        fdprintf(fd, "inc si\n");
+        fprintf(fp, "inc si\n");
         break;
     case '<':
-        fdprintf(fd, "dec si\n");
+        fprintf(fp, "dec si\n");
         break;
     case '+':
-        fdprintf(fd, "inc byte [buffer + esi]\n");
+        fprintf(fp, "inc byte [buffer + esi]\n");
         break;
     case '-':
-        fdprintf(fd, "dec byte [buffer + esi]\n");
+        fprintf(fp, "dec byte [buffer + esi]\n");
         break;
     case ',':
-        fdprintf(fd, 
+        fprintf(fp, 
                  "mov eax, 3\n"
                  "mov ebx, 0\n"
                  "lea ecx, [buffer + esi]\n"
@@ -85,7 +65,7 @@ int main(int argc, char** argv)
                  "int 0x80\n");
         break;
     case '.':
-        fdprintf(fd, 
+        fprintf(fp, 
                  "mov eax, 4\n"
                  "mov ebx, 1\n"
                  "lea ecx, [buffer + esi]\n"
@@ -93,30 +73,30 @@ int main(int argc, char** argv)
                  "int 0x80\n");
         break;
     case '[':
-        fdprintf(fd, "_l%d:\n", labelno);
+        fprintf(fp, "_l%lu:\n", labelno);
         old = labels;
         labels = malloc(sizeof(*labels));
         labels->prev = old;
         labels->labelno = labelno++;
         break;
     case ']':
-        fdprintf(fd, "cmp byte [buffer + esi], 0\n" 
-                     "jne _l%d\n", labels->labelno);
+        fprintf(fp, "cmp byte [buffer + esi], 0\n" 
+                     "jne _l%lu\n", labels->labelno);
         old = labels;
         labels = labels->prev;
         free(old);
         break;
     }
-    fdprintf(fd, 
+    fprintf(fp, 
             "mov eax, 1\n"
             "mov ebx, [buffer + esi]\n"
             "int 0x80\n");
-
+    fclose(fp);
     char command[260];    
 
-    int len = snprintf(command, 260, "nasm -f elf32 -o /tmp/_bfc.o /tmp/_bfc.asm; "
-                                    "ld -m elf_i386 -s -o %s /tmp/_bfc.o; "
-                                    "rm /tmp/_bfc.asm /tmp/_bfc.o", argv[2]);
+    int len = snprintf(command, 260, "nasm -f elf32 -o "TMPFILE".o "TMPFILE".asm ; "
+                                    "ld -m elf_i386 -s -o %s "TMPFILE".o ; "
+                                    /*"rm "TMPFILE".asm "TMPFILE".o"*/, argv[2]);
     if (len == 260 || len < 1) 
         return printf("Likely failed to create assembler command using snprintf, exiting to be safe\n");
     system(command);
