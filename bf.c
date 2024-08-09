@@ -3,7 +3,9 @@
 #include <string.h>
 #include <errno.h>
 
+#ifndef TMPFILE 
 #define TMPFILE "/tmp/_bfc"
+#endif
 
 int main(int argc, char** argv)
 {
@@ -96,7 +98,7 @@ int main(int argc, char** argv)
 
     int len = snprintf(command, 260, "nasm -f elf32 -o "TMPFILE".o "TMPFILE".asm ; "
                                     "ld -m elf_i386 -s -o %s "TMPFILE".o ; "
-                                    /*"rm "TMPFILE".asm "TMPFILE".o"*/, argv[2]);
+                                    "rm "TMPFILE".asm "TMPFILE".o", argv[2]);
     if (len == 260 || len < 1) 
         return printf("Likely failed to create assembler command using snprintf, exiting to be safe\n");
     system(command);
