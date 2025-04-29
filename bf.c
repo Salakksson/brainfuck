@@ -20,7 +20,7 @@ int main(int argc, char** argv)
     size_t sz = ftell(fp);
     fseek(fp, 0, SEEK_SET);
 
-    char* input = malloc(sz + 1);
+    char* input = malloc(sz);
     fread(input, 1, sz, fp);
     fclose(fp);
 
@@ -44,7 +44,7 @@ int main(int argc, char** argv)
     size_t labelno = 0;
     void* old;
     char ch;
-    for(size_t i = 0; (ch = input[i]); i++) switch(ch)
+    for(size_t i = 0; (ch = input[i]) && i < sz; i++) switch(ch)
     {
     case '>':
         fprintf(fp, "inc si\n");
